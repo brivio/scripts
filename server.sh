@@ -4,8 +4,14 @@
 _system_name(){
     cat /etc/*-release|grep '^ID='|awk -F= '{printf $2}'|sed 's/"//g'
 }
+
 _system_version(){
     cat /etc/*-release|grep '^VERSION_ID='|awk -F= '{printf $2}'|sed 's/"//g'
+}
+
+# 系统启动项
+_system_boot_items(){
+    systemctl list-unit-files|grep enable|sort
 }
 
 _install_oh_my_zsh(){
