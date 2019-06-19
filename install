@@ -18,7 +18,7 @@ _install_package git zsh unzip zip
 
 install_dir=~/.server-scripts
 
-if [[ -r $install_dir ]];then
+if [[ -d $install_dir ]];then
     rm -rf $install_dir
 fi
 
