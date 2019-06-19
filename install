@@ -30,7 +30,5 @@ do
     cat >> $i <<eof
 . $install_dir/server-scripts
 eof
+    fi
 done
-
-
-fi
