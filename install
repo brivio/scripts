@@ -1,1 +1,16 @@
 #!/bin/bash
+yum -y install git zsh unzip zip
+install_dir=~/.server-scripts
+
+if [[ -f $install_dir ]];then
+    rm -rf $install_dir
+fi
+
+git clone https://github.com/brivio/scripts.git $install_dir
+
+if [[ $(grep $install_dir ~/.bashrc|wc -l) = '0' ]];then
+    cat >> .bashrc <<eof
+. $install_dir/server-scripts
+eof
+
+fi
