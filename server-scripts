@@ -1,0 +1,653 @@
+#!/bin/bash
+#不要手动修改这个文件!
+_command_exist() {
+    type "$1" &> /dev/null
+}
+_setup_script_env(){
+    set -e
+    REQUIRE_COMMANDS="awk curl git grep openssl scp ssh unzip wget zip "
+    COLOR_RED="\033[31m"
+    COLOR_GREEN="\033[32m"
+    COLOR_YELLOW="\033[33m"
+    COLOR_BLUE="\033[34m"
+    COLOR_END="\033[0m"
+    HOME_PATH="$(cd ~;pwd)"
+    SCRIPT_PATH="$(cd $(dirname $0);pwd)"
+    WORK_PATH="$(pwd)"
+    SYSTEM_NAME="unknow"
+    case "$(uname)" in
+        Darwin)
+            SYSTEM_NAME="darwin"
+        ;;
+        CYGWIN*)
+            SYSTEM_NAME="cygwin"
+        ;;
+        Linux)
+            SYSTEM_NAME="linux"
+        ;;
+    esac
+}
+_check_darwin_gnu(){
+    if [[ $(uname) != 'Darwin' ]]; then
+        return
+    fi
+    if ! _command_exist brew; then
+        /usr/bin/ruby -e "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/master/install)"
+    fi    
+    local package=""
+    while [[ $# > 0 ]]; do
+        dir="/usr/local/opt/$1"
+        if [[ ! -d $dir ]]; then
+            package="$package $1"
+        fi
+        dir="$dir/libexec/gnubin"
+        if [[ -d $dir ]]; then
+            PATH="$dir:$PATH"
+        fi
+        shift
+    done
+    if [[ -n $package ]]; then
+        brew install $package
+    fi
+}
+_real_path(){
+    if [[ $SYSTEM_NAME = 'cygwin' ]]; then
+        cygpath -wp $1
+    else
+        echo $1
+    fi
+}
+_random(){
+    LENGTH=$1
+    MATRIX="$2"
+    default_dict="1234567890"
+    if [[ $# < 1 ]]; then
+        LENGTH=5
+    fi
+    if [[ $# < 2 ]]; then
+        MATRIX=$default_dict
+    fi
+    
+    while [ "${n:=1}" -le "$LENGTH" ]
+    do
+        PASS="$PASS${MATRIX:$(($RANDOM%${#MATRIX})):1}"
+        let n+=1
+    done
+    echo "$PASS"
+}
+_get_file_content(){
+    if [[ -f $1 ]]; then
+        cat $1
+    fi
+}
+_expr(){
+    awk "BEGIN{printf $1}"
+}
+_build_log(){
+    step=${step:=0}
+    step=$(_expr "$step + 1")
+    printf "\033[34m$step)、$1\033[0m\n"
+}
+_error_log(){
+    printf "\033[31m$1\033[0m\n"
+}
+_success_log(){
+    printf "\033[32m$1\033[0m\n"
+}
+_info_log(){
+    printf "\033[33m$1\033[0m\n"
+}
+_function_str(){
+    while [[ $# > 0 ]]; do
+        type $1|tail -n +2
+        shift
+    done
+}
+_is_env_set(){
+    res=$(echo $1|awk '{split($0,arr,":");for(i in arr) print arr[i]}')
+    for i in $res; do
+        if [[ $(_trim $i) = $(_trim $2) ]]; then
+            return 0
+        fi
+    done
+    return 1
+}
+_runtime_exit(){
+    msg=""
+    if [[ -n "$HOSTNAME" ]]; then
+        msg="$msg [$HOSTNAME"
+        if [[ -n "$SERVER_PATH" ]]; then
+            msg="$msg:$SERVER_PATH"
+        fi
+        msg="$msg]"
+    fi 
+    _success_log "完成时间:$(_date)$msg"
+    exit
+}
+_check_script_env(){
+    check_cmd_error=""
+    if [[ $# = 0 ]]; then
+        check_cmds=$REQUIRE_COMMANDS
+    else
+        check_cmds=$1   
+    fi
+    
+    for i in $check_cmds; do
+        if ! _command_exist $i ; then
+            check_cmd_error="$check_cmd_error${COLOR_RED}${i}${COLOR_END}不存在\n"
+        fi
+    done
+    if [[ -n $check_cmd_error ]]; then
+        printf "$check_cmd_error"
+        exit
+    fi
+}
+_kill(){
+    pid=$(pgrep -l $1|awk '{print $1}')
+    if [[ -n $pid ]]; then
+        sudo kill $pid
+    fi
+}
+_nohup(){
+    nohup $@ >/dev/null 2>&1 &
+}
+_pid_status(){
+    pid=$1
+    if [[ $pid -gt 0 ]]; then
+        if ps -p $pid >/dev/null ; then
+            return 0
+        else
+            return 1
+        fi
+    else
+        return 1
+    fi
+}
+_user_group(){
+    id -gn
+}
+_touch(){
+    if [[ $# > 0 ]]; then
+        touch $@
+    fi
+}
+_test_port() {
+    if netstat -an | egrep "[.:]$1 .*LISTEN" > /dev/null;then
+        return 0
+    else
+        return 1
+    fi
+}
+_date(){
+    if [[ $# -eq 0 ]]; then
+        date "+%Y-%m-%d %H:%M:%S"
+    else
+        date -d @$1 "+%Y-%m-%d %H:%M:%S"
+    fi
+}
+_date_raw(){
+    date "+%Y%m%d%H%M%S"
+}
+_strtotime(){
+    option=''
+    if [[ $# -eq 0 ]]; then
+        eval "date +%s"
+    else
+        eval "date -f '%Y-%m-%d %H:%M:%S' $1 +%s"
+    fi
+}
+_dl(){
+    cmd="wget -c -t 0 --content-disposition --no-check-certificate \"$1\" "
+    if [[ -n $2 ]]; then
+        cmd="$cmd -O $2"
+    fi
+    printf "\033[33m$cmd\033[0m\n"
+    eval "$cmd"
+}
+_scp(){
+    printf "${COLOR_YELLOW}scp -r -p $1 $HOSTNAME:$SERVER_PATH$2${COLOR_END}\n"
+    scp -r -p $1 $HOSTNAME:$SERVER_PATH$2
+}
+_ssh(){
+    ssh $HOSTNAME 'bash -s' "set -e \n $@"
+}
+_ls_git(){
+    find . -name ".git"
+}
+_rm_git(){
+    rm-file git
+}
+_git_init_push(){
+    git add .;git commit -m '代码初始化';git push origin master -f
+}
+_ls_files(){
+    if [[ -n $1 ]]; then
+        eval "find "$1" -type f 2>/dev/null|sort|uniq"
+    fi
+}
+_add_unstaged_file(){
+    if [[ -d ./.git ]]; then
+        files=$(_ls_files "$(git status -s|grep -E "^\?\?"|sed 's/^...//')")
+        _touch $files
+        if [[ -n $files ]]; then
+            git add $files 2>/dev/null
+        fi
+    fi
+}
+_get_uncommit_files(){
+    files=$(git status -s|grep -e "^R"|grep -o -e "->.*"|sed 's/^...//')
+    files="$files"$(git status -s|grep -v "^R"|sed 's/^...//')
+    echo "$files"
+}
+_touch_uncommit_files(){
+    if [[ -d ./.git ]]; then
+        _touch $(_ls_files "$(_get_uncommit_files)")
+    fi
+}
+_upper(){
+    echo "$1"|tr "[:lower:]" "[:upper:]"
+}
+_lower(){
+    echo "$1"|tr "[:upper:]" "[:lower:]"
+}
+_trim(){
+    echo "$1"|sed 's/ //g'|sed "s/\r//g"|sed "s/\n//g"
+}
+_length(){
+    echo $(echo "$1"|wc -c)
+}
+_sed_file(){
+    sed -i $1 $2
+}
+_remove_blank_lines(){
+  _sed_file '/^$/d' $1
+}
+_row_val(){
+    echo $(echo "$1"|grep -E "$2\s*:"|head -n1|awk 'BEGIN{NF=":"}{printf $2}')
+}
+_rm(){
+    while [[ $# > 0 ]]; do
+        if [[ -r $1 ]]; then
+            rm -rf $1
+        fi
+        shift
+    done
+}
+_ln(){
+    if [[ $# < 2 ]]; then
+        return
+    fi
+    _rm $2
+    ln -s $1 $2
+}
+_rm_file(){
+    for i in $(find . -name ".$1"); do
+        rm -rf $i
+        echo "rm -rf $i"
+    done
+}
+_mkdir(){
+    while [[ $# > 0 ]]; do
+        if [[ ! -r $1 ]]; then
+            mkdir -p $1
+            chmod -R 777 $1
+        fi
+        shift
+    done
+}
+_get_opt(){
+    for i in $@; do
+        if [[ $i = $1 ]]; then
+            continue
+        fi
+        key=$(echo $i|grep -o -E '\-(.*)[=|[:space:]]'|sed 's/^--//g'|sed 's/^-//g'|sed 's/=$//g')
+        if [[ $key = $1 ]]; then
+            echo $(echo $i|grep -o -E '[=|[:space:]](.*)'|sed 's/^=//g')
+            break
+        fi
+    done
+}
+_cp(){
+  if [[ -f $2 ]]; then
+    rm -rf $2
+  fi
+  cp $1 $2
+}
+_shellc(){
+    local max_line
+    max_line=0
+    dist_bin=$2
+    if [[ -r $dist_bin ]]; then
+      rm -rf $dist_bin
+    fi
+    cat "$1" | while read line
+    do
+        res=$(_trim "$line")
+        if [[ ${res:0:1} = '.' || -z $res ]]; then
+          include_file=$(_trim ${res:1:$(_length $res)})
+          include_file=${include_file/\~/$HOME_PATH}
+          cat $include_file>>$dist_bin
+          printf "\n">>$dist_bin
+        else
+          echo $line>>$dist_bin
+        fi
+    done
+    _sed_file "s/^[[:space:]]*#.*//g" $dist_bin
+    _sed_file "s/^function[[:space:]]*//g" $dist_bin
+    _remove_blank_lines $dist_bin
+    sed -i -e "1i\\
+\#!/bin/bash\\
+\#不要手动修改这个文件!" $dist_bin
+}
+_x(){
+    local remove_archive
+    local success
+    local file_name
+    local extract_dir
+    if (( $# == 0 )); then
+        echo "Usage: extract [-option] [file ...]"
+        echo
+        echo Options:
+        echo "    -r, --remove    Remove archive."
+        echo
+        echo "Report bugs to <sorin.ionescu@gmail.com>."
+    fi
+    remove_archive=1
+    if [[ "$1" == "-r" ]] || [[ "$1" == "--remove" ]]; then
+        remove_archive=0
+        shift
+    fi
+    while (( $# > 0 )); do
+        if [[ ! -f "$1" ]]; then
+            echo "extract: '$1' is not a valid file" 1>&2
+            shift
+            continue
+        fi
+        success=0
+        file_name="$( basename "$1" )"
+        extract_dir="$( echo "$file_name" | sed "s/\.${1##*.}//g" )"
+        case "$1" in
+        (*.tar.gz|*.tgz)
+            [ -z $commands[pigz] ] && tar zxvf "$1" || pigz -dc "$1" | tar xv
+            ;;
+        (*.tar.bz2|*.tbz|*.tbz2)
+            tar xvjf "$1"
+            ;;
+        (*.tar.xz|*.txz)
+            tar --xz --help &> /dev/null \
+                && tar --xz -xvf "$1" \
+            || xzcat "$1" | tar xvf -
+            ;;
+        (*.tar.zma|*.tlz)
+            tar --lzma --help &> /dev/null \
+                && tar --lzma -xvf "$1" \
+            || lzcat "$1" | tar xvf -
+            ;;
+        (*.tar)
+            tar xvf "$1"
+            ;;
+        (*.gz)
+            [ -z $commands[pigz] ] && gunzip "$1" || pigz -d "$1"
+            ;;
+        (*.bz2)
+            bunzip2 "$1"
+            ;;
+        (*.xz)
+            unxz "$1"
+            ;;
+        (*.lzma)
+            unlzma "$1"
+            ;;
+        (*.Z)
+            uncompress "$1"
+            ;;
+        (*.zip|*.war|*.jar|*.sublime-package|*.ipsw|*.xpi|*.apk)
+            unzip "$1" -d $extract_dir
+            ;;
+        (*.rar)
+            unrar x -ad "$1"
+            ;;
+        (*.7z)
+            7za x "$1"
+            ;;
+        (*.deb)
+            mkdir -p "$extract_dir/control"
+            mkdir -p "$extract_dir/data"
+            cd "$extract_dir"; ar vx "../${1}" > /dev/null
+            cd control; tar xzvf ../control.tar.gz
+            cd ../data; tar xzvf ../data.tar.gz
+            cd ..; rm *.tar.gz debian-binary
+            cd ..
+            ;;
+        (*)
+            echo "extract: '$1' cannot be extracted" 1>&2
+            success=1
+            ;;
+        esac
+            (( success = $success > 0 ? $success : $? ))
+            (( $success == 0 )) && (( $remove_archive == 0 )) && rm "$1"
+        shift
+    done
+}
+_zip_file(){
+    start_time=$(date +%s.%N)
+    files=$2
+    total_row=$(echo $(echo "$files"|wc -l))
+    once_count=500
+    for (( i=1; i <= $total_row; i+=$once_count )); do
+        printf "$i/$total_row\r"
+        zip_files=$(echo "$files"|awk 'BEGIN{FS="\n"}NR=='$i',NR=='$(expr $i + $once_count - 1)'{printf "\"%s\" ",$1}')
+        eval "zip -q -r $1 $zip_files"
+    done
+    printf "$total_row/$total_row\r"
+    end_time=$(date +%s.%N)
+    executed_seconds=$(echo|awk "{printf \"%.3f\",$end_time-$start_time}")
+    printf "\033[33m耗时:${executed_seconds}s 大小："$(ls -lh $1|awk '{printf "%s(%s)",$5,$9}')"\033[0m\r\n"
+}
+_gen_rsa_key(){
+    private_key="./rsa_private_key.pem"
+    public_key="./rsa_public_key.pem"
+    pkcs8_file="./rsa_private_key_pkcs8.pem"
+    _build_log "生成私钥、公钥、pkcs8"
+    openssl genrsa -out $private_key 2048
+    openssl rsa -in $private_key -pubout -out $public_key
+    openssl pkcs8 -topk8 -inform PEM -in $private_key -outform PEM –nocrypt>$pkcs8_file
+}
+_sslc(){
+    openssl aes-128-cbc -salt -in $1 -out $1.aes && rm -f $1
+}
+_ssld(){
+    openssl aes-128-cbc -d -salt -in $1.aes -out $1 && rm -f $1.aes
+}
+_base64_encode(){
+    printf "$1"|openssl base64
+}
+_base64_decode(){
+    printf "$1"|openssl base64 -d
+}
+_md5(){
+    printf "$1"|openssl md5 -binary| xxd -p
+}
+_sha(){
+    printf "$1"|openssl sha -binary| xxd -p
+}
+_sha1(){
+    printf "$1"|openssl sha1 -binary| xxd -p
+}
+_gen_password(){
+    openssl rand 5 -base64
+}
+_local_ip(){
+    case $SYSTEM_NAME in
+        linux )
+            echo $(ifconfig eth0|awk -F'[:B]' '/inet addr/{print $2}')
+            ;;
+        darwin)
+            echo $(ifconfig en0|awk '/inet /{printf $2}')
+            ;;
+        cygwin)
+            echo $(ipconfig|grep 'IPv4'|head -n1|awk 'BEGIN{FS=":"}{printf "%s\n",$2}')
+            ;;
+    esac
+}
+_get_dns(){
+    cat /etc/resolv.conf|awk '$1=="nameserver"{printf "%s\n",$2}'
+}
+_add_system_info(){
+    printf '%-15s: %s\n' "$1" "$2"
+}
+_system_info(){
+    _add_system_info "System" $(uname)
+    case $(uname) in
+        Linux )
+            cpu_info=$(cat /proc/cpuinfo)
+            cpu_name=$(_row_val "$cpu_info" "model name")
+            _add_system_info "CPU" "$cpu_name"
+            mem_info=$(cat /proc/meminfo)
+            mem_total=$(expr $(_row_val "$mem_info" "MemTotal"|awk '{printf $1}') / 1024 )
+            mem_available=$(expr $(_row_val "$mem_info" "MemAvailable"|awk '{printf $1}') / 1024)
+            _add_system_info "Memory" "共${mem_total}M 可用${mem_available}M"
+            disk_info=$(df -h)
+            _add_system_info "Disk" "$(df -h|awk 'NR==2{printf "共%s 可用%s",$2,$4}')"
+            ;;
+        Darwin)
+            echo 'mac'
+            ;;
+    esac
+}
+_install_package(){
+    while [[ $# > 0 ]]; do
+        if ! type $1 &>/dev/null; then
+            if type yum &>/dev/null; then
+                yum install -y $1
+            elif type apt-get &>/dev/null; then
+                apt-get install $1
+            elif type brew &>/dev/null; then
+                brew install $1
+            fi
+        fi
+        shift
+    done
+}
+_progress_bar(){
+    let _progress=(${1}*100/${2}*100)/100
+    let _done=(${_progress}*4)/10
+    let _left=40-$_done
+    _fill=$(printf "%${_done}s")
+    _empty=$(printf "%${_left}s")
+    printf "\rProgress : [${_fill// /#}${_empty// /-}] ${_progress}%%"
+}
+_add_help(){
+    HELP_TITLE_MAX_LENGTH=${HELP_TITLE_MAX_LENGTH-0}
+    if [[ $HELP_TITLE_MAX_LENGTH -lt ${#1} ]]; then
+        HELP_TITLE_MAX_LENGTH=${#1}
+    fi
+    HELP_INDEX=${HELP_INDEX-0}
+    HELP_TITLE[$HELP_INDEX]="$1"
+    HELP_CONTENT[$HELP_INDEX]="$2"
+    HELP_INDEX=$(_expr "$HELP_INDEX+1")
+}
+_show_help(){
+    content="选项:\n"
+    for (( i = 0; i <= $HELP_INDEX; i++ )); do
+        content="$content$(printf "\t$COLOR_BLUE%-${HELP_TITLE_MAX_LENGTH}s$COLOR_END" "${HELP_TITLE[$i]}")"
+        
+        info="$(printf "${HELP_CONTENT[$i]}"|awk "BEGIN{FS=\"\n\"}NR==1{printf \"%s\n\",\$1}")"
+        content="$content$info\n" 
+        info="$(printf "${HELP_CONTENT[$i]}"|awk "BEGIN{FS=\"\n\"}NR>1{printf \"%-${HELP_TITLE_MAX_LENGTH}s\t%s\n\",\"\",\$1}")"
+        if [[ -n $info ]]; then
+            content="$content$COLOR_YELLOW$info$COLOR_END\n"
+        fi
+    done
+    printf "$content"
+    if [[ $# = 0 ]]; then
+        exit
+    fi
+}
+_extract_bin(){
+    local line=$(cat $0|grep -En '^__EXTRAL_BIN__$'|awk 'BEGIN{FS=":"}{printf "%s\n",$1+1}')
+    if [[ -n $line ]]; then
+        cat $0|tail -n +$line>$1
+    fi   
+}
+_get_config(){
+    python -c '# coding=utf-8
+import json
+try:
+    d = json.load(open("'$1'"))
+except Exception:
+    d = {}
+if "'$2'" in d: 
+    print(d["'$2'"])
+'
+}
+_set_config(){
+    python -c '# coding=utf-8
+import json
+def file_get_contents(path):
+    with open(path) as f:
+        data= f.read()
+        f.close()
+        return data
+def file_put_content(f, data):
+    with open(f, "w") as f:
+        f.write(data)
+        f.close()
+d = json.loads(file_get_contents("'$1'"))
+d["'$2'"]="'$3'"
+file_put_content("'$1'",json.dumps(d, ensure_ascii=True,sort_keys=True,indent=4))
+'
+}
+_runtime_init(){
+    _setup_script_env
+    _check_darwin_gnu coreutils findutils md5sha1sum gnu-sed
+}
+_runtime_init
+_system_name(){
+    cat /etc/*-release|grep '^ID='|awk -F= '{printf $2}'|sed 's/"//g'
+}
+_system_version(){
+    cat /etc/*-release|grep '^VERSION_ID='|awk -F= '{printf $2}'|sed 's/"//g'
+}
+_install_oh_my_zsh(){
+    yum install -y git zsh zip unzip
+    sh -c "$(curl -fsSL https://raw.githubusercontent.com/brivio/oh-my-zsh/master/tools/install.sh)"
+    if [[ -f ~/.zshrc ]]; then
+        sed -i 's/ZSH_THEME\=\"robbyrussell\"/ZSH_THEME\=\"josh\"/g' ~/.zshrc       
+        sed -i 's/# DISABLE_AUTO_UPDATE\=\"true\"/DISABLE_AUTO_UPDATE\=\"true\"/g' ~/.zshrc
+    fi
+}
+_install_lnmp(){
+    rpm -Uvh https://dl.fedoraproject.org/pub/epel/epel-release-latest-7.noarch.rpm
+    rpm -Uvh https://mirror.webtatic.com/yum/el7/webtatic-release.rpm
+    php=php72w
+    yum -y install $php ${php}-cli ${php}-common ${php}-devel ${php}-embedded ${php}-fpm ${php}-gd ${php}-mbstring ${php}-mysqlnd ${php}-opcache ${php}-pdo ${php}-xml
+    yum -y install mariadb mariadb-server
+    systemctl start  mariadb
+    systemctl enable  mariadb
+    yum -y install httpd httpd-manual mod_ssl mod_perl
+    systemctl start  httpd
+    systemctl enable  httpd
+}
+_init_vim(){
+    if [[ ! -f ~/.vimrc ]]; then
+    cat >~/.vimrc <<EOF
+"设置编码
+set enc=utf-8
+"语法高亮
+syntax on
+"历史命令保存行数
+set history=100
+"当文件被外部改变时自动读取
+set autoread
+"取消自动备份及产生swp文件
+set nobackup
+set nowb
+set noswapfile
+EOF
+fi
+}
+_init_server(){
+    _install_oh_my_zsh
+    _install_lnmp
+}
