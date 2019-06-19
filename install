@@ -1,6 +1,21 @@
 #!/bin/bash
 
-yum -y install git zsh unzip zip
+_install_package(){
+    while [[ $# > 0 ]]; do
+        if ! type $1 &>/dev/null; then
+            if type yum &>/dev/null; then
+                yum install -y $1
+            elif type apt-get &>/dev/null; then
+                apt-get install $1
+            elif type brew &>/dev/null; then
+                brew install $1
+            fi
+        fi
+        shift
+    done
+}
+_install_package git zsh unzip zip
+
 install_dir=~/.server-scripts
 
 if [[ -r $install_dir ]];then
